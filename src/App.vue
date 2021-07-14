@@ -57,26 +57,31 @@
     <template v-if="tickers.length>0">
       <hr class="w-full border-t border-gray-600 my-4"/>
       <div>
+        page: {{ page }}
         <button
             class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            @click="page -= 1"
+            v-if="page>1"
         >
           Назад
         </button>
         <button
             class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            @click="page+=1"
+            v-if="hasNextPage"
         >
           Вперед
         </button>
-        <div>Фильтр: <input v-model="filter " type="text"></div>
+        <div>Фильтр: <input v-model="filter" type="text"></div>
       </div>
       <hr class="w-full border-t border-gray-600 my-4"/>
       <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
         <div
-            v-for="item in filteredList()"
+            v-for="item in paginatedList"
             :key="item.name"
             @click="select(item)"
             :class="{
-              'border-4':sel===item
+              'border-4':selectedTicker===item
             }"
             class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
         >
@@ -113,20 +118,20 @@
 
       <hr class="w-full border-t border-gray-600 my-4"/>
 
-      <section v-if="sel" class="relative">
+      <section v-if="selectedTicker" class="relative">
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-          {{ sel.name.toUpperCase() }} - USD
+          {{ selectedTicker.name.toUpperCase() }} - USD
         </h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
           <div
-              v-for="(bar,i) in normalizeGraph()"
+              v-for="(bar,i) in normalizedGraph"
               :key="i"
               :style="{height:`${bar}%`}"
               class="bg-purple-800 border w-10"
           ></div>
         </div>
         <button
-            @click="sel=null"
+            @click="selectedTicker=null"
             type="button"
             class="absolute top-0 right-0"
         >
@@ -166,7 +171,7 @@ export default {
     return {
       ticker: "",
       tickers: [],
-      sel: null,
+      selectedTicker: null,
       graph: [],
       page: 1,
       filter: "",
@@ -174,6 +179,16 @@ export default {
   },
 
   created() {
+    const windowData = Object.fromEntries(new URL(window.location).searchParams.entries());
+
+    if (windowData.filter) {
+      this.filter = windowData.filter
+    }
+
+    if (windowData.page) {
+      this.page = windowData.page
+    }
+
     const tickersData = localStorage.getItem('cripto-list');
 
     if (tickersData) {
@@ -184,28 +199,49 @@ export default {
     })
   },
 
-  methods: {
-
-    filteredList(){
-      const start = (this.page-1) * 6;
-      const end = this.page*6;
-      return this.tickers
-          .filter(ticker => ticker.name.includes(this.filter))
-          .slice(start, end)
+  computed: {
+    startIndex() {
+      return (this.page - 1) * 6
     },
 
+    endIndex() {
+      return this.page * 6
+    },
+
+    filteredList() {
+      return this.tickers.filter(ticker => ticker.name.includes(this.filter));
+    },
+
+    paginatedList() {
+      return this.filteredList.slice(this.startIndex, this.endIndex);
+    },
+
+    hasNextPage() {
+      return this.filteredList.length > this.endIndex
+    },
+
+    normalizedGraph() {
+      const maxValGraph = Math.max(...this.graph);
+      const minValGraph = Math.min(...this.graph);
+
+      return this.graph.map(
+          price => minValGraph === maxValGraph ? 100 : 1 + ((price - minValGraph) * 99) / (maxValGraph - minValGraph));
+    },
+  },
+
+  methods: {
     subscribeToUpdates(tickerName) {
       setInterval(async () => {
-        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD`);
+        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=6fe92e578f939e3c7be9d37741ddb66af4c0cff263bf219439c6e947415355f6`);
         const data = await f.json();
 
         this.tickers.find(item => item.name === tickerName).price =
             data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(4);
 
-        if (this.sel?.name === tickerName) {
+        if (this.selectedTicker?.name === tickerName) {
           this.graph.push(data.USD);
         }
-      }, 3000)
+      }, 10000)
 
       this.ticker = "";
     },
@@ -224,23 +260,36 @@ export default {
     },
 
     handleDelete(tickerToRemove) {
-      if (this.sel === tickerToRemove) {
-        this.sel = null;
+      if (this.selectedTicker === tickerToRemove) {
+        this.selectedTicker = null;
       }
       this.tickers = this.tickers.filter(item => item !== tickerToRemove);
     },
 
-    normalizeGraph() {
-      const maxValGraph = Math.max(...this.graph);
-      const minValGraph = Math.min(...this.graph);
-      return this.graph.map(
-          price => minValGraph === maxValGraph ? 100 : 1 + ((price - minValGraph) * 99) / (maxValGraph - minValGraph));
-    },
-
     select(ticker) {
-      this.sel = ticker;
+      this.selectedTicker = ticker;
+    },
+  },
+  watch: {
+    selectedTicker(){
       this.graph = [];
     },
+    paginatedList() {
+      if (this.paginatedList.length === 0 && this.page > 1) {
+        this.page -= 1
+      }
+    },
+    filter() {
+      this.page = 1
+      window.history.pushState(
+          null, document.title, `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+      )
+    },
+    page() {
+      window.history.pushState(
+          null, document.title, `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+      )
+    }
   }
 }
 </script>
