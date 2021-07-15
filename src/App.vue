@@ -227,6 +227,13 @@ export default {
       return this.graph.map(
           price => minValGraph === maxValGraph ? 100 : 1 + ((price - minValGraph) * 99) / (maxValGraph - minValGraph));
     },
+
+    pageStateOptions(){
+      return {
+        filter: this.filter,
+        page: this.page,
+      }
+    }
   },
 
   methods: {
@@ -252,10 +259,9 @@ export default {
         price: "-",
       };
 
-      this.tickers.push(curentTicker);
+      this.tickers=[...this.tickers, curentTicker];
       this.filter = "";
 
-      localStorage.setItem('cripto-list', JSON.stringify(this.tickers));
       this.subscribeToUpdates(curentTicker.name);
     },
 
@@ -271,6 +277,10 @@ export default {
     },
   },
   watch: {
+    tickers(){
+      localStorage.setItem('cripto-list', JSON.stringify(this.tickers));
+    },
+
     selectedTicker(){
       this.graph = [];
     },
@@ -281,13 +291,10 @@ export default {
     },
     filter() {
       this.page = 1
-      window.history.pushState(
-          null, document.title, `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
-      )
     },
-    page() {
+    pageStateOptions(val) {
       window.history.pushState(
-          null, document.title, `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+          null, document.title, `${window.location.pathname}?filter=${val.filter}&page=${val.page}`
       )
     }
   }
