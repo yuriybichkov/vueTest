@@ -87,10 +87,10 @@
         >
           <div class="px-4 py-5 sm:p-6 text-center">
             <dt class="text-sm font-medium text-gray-500 truncate">
-              {{ item.name.toUpperCase() }} - USD
+              {{ item.name}} - USD
             </dt>
             <dd class="mt-1 text-3xl font-semibold text-gray-900">
-              {{ item.price }}
+              {{ formatPrice(item.price) }}
             </dd>
           </div>
           <div class="w-full border-t border-gray-200"></div>
@@ -120,7 +120,7 @@
 
       <section v-if="selectedTicker" class="relative">
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-          {{ selectedTicker.name.toUpperCase() }} - USD
+          {{ selectedTicker.name }} - USD
         </h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
           <div
@@ -165,6 +165,8 @@
 
 <script>
 
+import {subscribeToTicker, unSubscribeFromTicker} from "./api";
+
 export default {
   name: 'App',
   data() {
@@ -193,10 +195,11 @@ export default {
 
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
+      this.tickers.forEach(ticker => {
+        subscribeToTicker(ticker.name, (newPrice) => this.updateTicker(ticker.name, newPrice))
+      })
     }
-    this.tickers.forEach(ticker => {
-      this.subscribeToUpdates(ticker.name);
-    })
+    setInterval(this.updateTickers, 17000)
   },
 
   computed: {
@@ -225,10 +228,12 @@ export default {
       const minValGraph = Math.min(...this.graph);
 
       return this.graph.map(
-          price => minValGraph === maxValGraph ? 100 : 1 + ((price - minValGraph) * 99) / (maxValGraph - minValGraph));
+          price => minValGraph === maxValGraph
+              ? 100
+              : 1 + ((price - minValGraph) * 99) / (maxValGraph - minValGraph));
     },
 
-    pageStateOptions(){
+    pageStateOptions() {
       return {
         filter: this.filter,
         page: this.page,
@@ -237,32 +242,56 @@ export default {
   },
 
   methods: {
-    subscribeToUpdates(tickerName) {
-      setInterval(async () => {
-        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=6fe92e578f939e3c7be9d37741ddb66af4c0cff263bf219439c6e947415355f6`);
-        const data = await f.json();
-
-        this.tickers.find(item => item.name === tickerName).price =
-            data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(4);
-
-        if (this.selectedTicker?.name === tickerName) {
-          this.graph.push(data.USD);
-        }
-      }, 10000)
-
-      this.ticker = "";
+    updateTicker(tickerName, price) {
+      this.tickers.filter(item => item.name === tickerName)
+          .forEach(item => {
+            if (item===this.selectedTicker){
+              this.graph.push(price)
+            }
+            item.price = price})
     },
 
+    formatPrice(price) {
+      if (price === "-") {
+        return price
+      }
+      return price > 1 ? price.toFixed(2) : price.toPrecision(4);
+    },
+
+//     updateTickers() {
+//       if (!this.tickers.length) {
+//          return
+//       }
+//       console.log('Update Ticker');
+//       const exchangeData = this.tickers.map(item => item.name);
+//       console.log("-> exchangeData", exchangeData);
+//       this.tickers.forEach(ticker => {
+//         const tickerPrice = exchangeData[ticker.name.toUpperCase()]
+//         ticker.price = tickerPrice ?? "-"
+//         console.log("-> ticker.price", ticker.price);
+//       })
+//
+//      /* this.tickers.find(item => item.name === ticker.name).price =
+//           exchangeData.USD > 1 ? exchangeData.USD.toFixed(2) : exchangeData.USD.toPrecision(4);
+// */
+//      /* if (this.selectedTicker?.name === ticker.name) {
+//         this.graph.push(exchangeData.USD);
+//       }*/
+//
+//       this.ticker = "";
+//     },
+
     add() {
-      const curentTicker = {
-        name: this.ticker,
+      const currentTicker = {
+        name: this.ticker.toUpperCase(),
         price: "-",
       };
 
-      this.tickers=[...this.tickers, curentTicker];
+      this.tickers = [...this.tickers, currentTicker];
       this.filter = "";
-
-      this.subscribeToUpdates(curentTicker.name);
+      this.ticker = "";
+      subscribeToTicker(currentTicker.name, newPrice => this.updateTicker(currentTicker.name,newPrice) )
+      //this.updateTickers(currentTicker.name);
     },
 
     handleDelete(tickerToRemove) {
@@ -270,6 +299,7 @@ export default {
         this.selectedTicker = null;
       }
       this.tickers = this.tickers.filter(item => item !== tickerToRemove);
+      unSubscribeFromTicker(tickerToRemove.name)
     },
 
     select(ticker) {
@@ -277,11 +307,11 @@ export default {
     },
   },
   watch: {
-    tickers(){
+    tickers() {
       localStorage.setItem('cripto-list', JSON.stringify(this.tickers));
     },
 
-    selectedTicker(){
+    selectedTicker() {
       this.graph = [];
     },
     paginatedList() {
